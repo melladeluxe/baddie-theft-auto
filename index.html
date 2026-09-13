@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Baddie Theft Auto: Glam City</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    html,body { height: 100%; }
+    body {
+      background: #0f051d;
+      color: #fff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+      padding: 18px;
+    }
+    #game-wrapper {
+      width: min(960px, 98vw);
+      aspect-ratio: 4 / 3;
+      position: relative;
+      border-radius: 12px;
+      box-shadow: 0 0 25px #ff2a85, inset 0 0 15px rgba(255,42,133,0.15);
+      border: 4px solid #ff2a85;
+      background: linear-gradient(#181124, #110816);
+    }
+    canvas { display:block; width:100%; height:100%; }
+    #hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      pointer-events: none;
+      font-weight: bold;
+      font-size: 16px;
+      text-shadow: 0 0 8px #000;
+    }
+    .hud-box {
+      background: rgba(15, 5, 29, 0.75);
+      padding: 8px 14px;
+      border-radius: 20px;
+      border: 1px solid #ff7bb0;
+    }
+    #overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(15,5,29,0.85);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 12px;
+      padding: 18px;
+    }
+    h1 { font-size: 34px; color: #ff2a85; text-shadow: 0 0 12px #ff2a85; }
+    p { color: #e2c0ff; max-width: 88%; }
+    button.primary {
+      background: linear-gradient(45deg,#ff2a85,#9b51e0);
+      color: white; border: none; padding: 12px 24px; font-size: 18px; border-radius: 20px; cursor:pointer;
+      box-shadow: 0 0 15px #ff2a85;
+    }
+    #controls {
+      position: absolute; right: 10px; bottom: 10px; display:flex; gap:8px; pointer-events: auto;
+    }
+    .control-btn { background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.06); padding:8px 10px; border-radius:8px; color:#fff; font-weight:bold; }
+    #touch-controls {
+      position: absolute; left: 12px; bottom: 12px; display:flex; gap:10px; pointer-events: auto; align-items:center;
+    }
+    .pad { display:flex; gap:8px; }
+    .pad button { width:56px; height:56px; border-radius:12px; font-size:18px; }
+    /* Smaller layout for narrow screens */
+    @media (max-width:520px) {
+      h1 { font-size: 24px; }
+      .pad button { width:48px; height:48px; }
+      #game-wrapper { width: 98vw; }
+    }
+  </style>
+</head>
+<body>
+  <div id="game-wrapper">
+    <canvas id="canvas" width="800" height="600"></canvas>
+
+    <div id="hud">
+      <div class="hud-box">💅 Clout: <span id="clout-val">0</span></div>
+      <div class="hud-box">💵 Cash: $<span id="cash-val">0</span></div>
+      <div class="hud-box">🚨 Heat: <span id="heat-val">⭐☆☆☆☆</span></div>
+    </div>
+
+    <div id="overlay">
+      <h1 id="title">BADDIE THEFT AUTO</h1>
+      <p id="desc">Outrun the Vibe Police, grab Clout drops & Cash bags, and dominate Glam City!</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;">
+        <button class="primary" id="start-btn">PLAY GAME</button>
+        <button class="control-btn" id="mute-btn">🔊</button>
+      </div>
+      <p style="font-size:13px;color:#ff7bb0;">Controls: Arrow Keys / WASD. On mobile use on-screen buttons or tilt.</p>
+      <div style="font-size:13px;color:#e2c0ff;">High score: <span id="highscore">0</span></div>
+    </div>
+
+    <div id="controls">
+      <button class="control-btn" id="pause-btn">Pause</button>
+      <button class="control-btn" id="tilt-btn">Tilt: Off</button>
+    </div>
+
+    <div id="touch-controls" aria-hidden="false">
+      <div class="pad">
+        <button id="left-btn">◀</button>
+        <button id="up-btn">▲</button>
+        <button id="right-btn">▶</button>
+      </div>
+      <div class="pad">
+        <button id="brake-btn">⏹</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// GitHub Copilot Chat Assistant: responsive & optimized single-file build
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const wrapper = document.getElementById('game-wrapper');
+
+// Game state
+let isPlaying = false;
+let clout = 0, cash = 0, heat = 1;
+let highScore = Number(localStorage.getItem('bta:highscore') || 0);
+let muted = false;
+
+const player = { x:400, y:300, angle:0, speed:0, maxSpeed: 240, accel: 8, friction: 0.92, turnSpeed: 3.6, size:20 };
+let policeCars = [];
+let collectibles = [];
+
+// Input
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if ([' ', 'enter'].includes(e.key.toLowerCase())) e.preventDefault(); });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// Touch buttons
+const leftBtn = document.getElementById('left-btn');
+const rightBtn = document.getElementById('right-btn');
+const upBtn = document.getElementById('up-btn');
+const brakeBtn = document.getElementById('brake-btn');
+[leftBtn,rightBtn,upBtn,brakeBtn].forEach(b => {
+  if (!b) return;
+  b.addEventListener('touchstart', e => { e.preventDefault(); keys[b.id.replace('-btn','')] = true; });
+  b.addEventListener('touchend', e => { e.preventDefault(); keys[b.id.replace('-btn','')] = false; });
+  b.addEventListener('mousedown', e => { e.preventDefault(); keys[b.id.replace('-btn','')] = true; });
+  b.addEventListener('mouseup', e => { e.preventDefault(); keys[b.id.replace('-btn','')] = false; });
+});
+
+// Tilt support
+let tiltEnabled = false;
+const tiltBtn = document.getElementById('tilt-btn');
+tiltBtn.addEventListener('click', () => { tiltEnabled = !tiltEnabled; tiltBtn.innerText = `Tilt: ${tiltEnabled ? 'On' : 'Off'}`; if (tiltEnabled) enableTilt(); else disableTilt(); });
+function enableTilt(){ if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+  DeviceOrientationEvent.requestPermission().catch(()=>{}).then(p=>{});
+}
+window.addEventListener('deviceorientation', onTilt);
+}
+function disableTilt(){ window.removeEventListener('deviceorientation', onTilt); }
+function onTilt(e){ if (!tiltEnabled) return; const tiltLR = e.gamma || 0; keys['left'] = tiltLR < -6; keys['right'] = tiltLR > 6; }
+
+// UI elements
+const overlay = document.getElementById('overlay');
+const startBtn = document.getElementById('start-btn');
+const pauseBtn = document.getElementById('pause-btn');
+const muteBtn = document.getElementById('mute-btn');
+const cloutVal = document.getElementById('clout-val');
+const cashVal = document.getElementById('cash-val');
+const heatVal = document.getElementById('heat-val');
+const highscoreEl = document.getElementById('highscore');
+highscoreEl.innerText = highScore;
+
+startBtn.addEventListener('click', () => { startGame(); });
+pauseBtn.addEventListener('click', () => { if (!isPlaying) return; paused = !paused; pauseBtn.innerText = paused ? 'Resume' : 'Pause'; });
+muteBtn.addEventListener('click', () => { muted = !muted; muteBtn.innerText = muted ? '🔇' : '🔊'; });
+
+// Audio via WebAudio API (no external assets)
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playTone(freq, time=0.08, type='sine', gain=0.12){ if (muted) return; try{ const o = audioCtx.createOscillator(); const g = audioCtx.createGain(); o.type = type; o.frequency.value = freq; g.gain.value = gain; o.connect(g); g.connect(audioCtx.destination); o.start(); g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + time); setTimeout(()=> { o.stop(); o.disconnect(); g.disconnect(); }, time*1000+50); }catch(e){}
+}
+function playCollect(){ playTone(880, 0.12, 'triangle', 0.08); }
+function playPolice(){ playTone(220, 0.16, 'sawtooth', 0.12); }
+
+// Responsive & Hi-DPI canvas
+function resizeCanvas(){ const rect = wrapper.getBoundingClientRect(); const dpr = Math.min(window.devicePixelRatio || 1, 2); canvas.style.width = rect.width + 'px'; canvas.style.height = rect.height + 'px'; canvas.width = Math.round(rect.width * dpr); canvas.height = Math.round(rect.height * dpr); ctx.setTransform(dpr,0,0,dpr,0,0); }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Spawning helpers
+function spawnPolice(){ const side = Math.floor(Math.random()*4); let x,y; const pad=40; if(side===0){ x=Math.random()*canvas.width; y=-pad; } else if(side===1){ x=canvas.width+pad; y=Math.random()*canvas.height; } else if(side===2){ x=Math.random()*canvas.width; y=canvas.height+pad; } else { x=-pad; y=Math.random()*canvas.height; }
+  policeCars.push({ x: x / (window.devicePixelRatio||1), y: y / (window.devicePixelRatio||1), angle:0, speed: 80 + Math.random()*60, size:18 }); }
+function spawnCollectible(){ const type = Math.random() > 0.45 ? 'clout' : 'cash'; collectibles.push({ x: 40 + Math.random()*(canvas.width/(window.devicePixelRatio||1)-80), y: 40 + Math.random()*(canvas.height/(window.devicePixelRatio||1)-80), type, size:12 }); }
+
+function updateHUD(){ cloutVal.innerText = clout; cashVal.innerText = cash; let stars = '⭐'.repeat(heat) + '☆'.repeat(5-heat); heatVal.innerText = stars; }
+
+function startGame(){ overlay.style.display = 'none'; clout = 0; cash = 0; heat = 1; player.x = canvas.width/2/(window.devicePixelRatio||1); player.y = canvas.height/2/(window.devicePixelRatio||1); player.speed = 0; player.angle = 0; policeCars = []; collectibles = []; for(let i=0;i<4;i++) spawnCollectible(); spawnPolice(); isPlaying=true; paused=false; updateHUD(); lastTime = performance.now(); gameLoop(lastTime); }
+
+function gameOver(){ isPlaying=false; overlay.style.display='flex'; document.getElementById('title').innerText = 'BUSTED BY VIBE POLICE!'; document.getElementById('desc').innerText = `Final — Clout: ${clout} | Cash: $${cash}`; startBtn.innerText = 'TRY AGAIN'; const score = clout + cash; if(score > highScore){ highScore = score; localStorage.setItem('bta:highscore', highScore); highscoreEl.innerText = highScore; } }
+
+// Collision helpers
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+
+// Main loop (delta-time in seconds)
+let lastTime = 0; let paused = false;
+function gameLoop(ts){ if(!isPlaying) return; if(paused){ lastTime = ts; requestAnimationFrame(gameLoop); return; }
+  const dt = Math.min(0.05, (ts - lastTime)/1000); lastTime = ts;
+  // Input -> normalized
+  const forward = keys['arrowup'] || keys['w'] || keys['up'] || keys['up-btn'];
+  const back = keys['arrowdown'] || keys['s'] || keys['down'] || keys['brake-btn'];
+  const left = keys['arrowleft'] || keys['a'] || keys['left'] || keys['left-btn'];
+  const right = keys['arrowright'] || keys['d'] || keys['right'] || keys['right-btn'];
+
+  // Steering & accel (speed in px/sec)
+  if(forward) player.speed = Math.min(player.maxSpeed, player.speed + player.accel * 60 * dt);
+  if(back) player.speed = Math.max(-player.maxSpeed/2, player.speed - player.accel * 60 * dt);
+  const turnAmount = player.turnSpeed * dt * (player.speed / player.maxSpeed);
+  if(left) player.angle -= turnAmount;
+  if(right) player.angle += turnAmount;
+  // friction
+  player.speed *= Math.pow(player.friction, 60*dt);
+  player.x += Math.cos(player.angle) * player.speed * dt;
+  player.y += Math.sin(player.angle) * player.speed * dt;
+
+  // Keep in bounds (consider logical canvas size)
+  const W = canvas.width/(window.devicePixelRatio||1), H = canvas.height/(window.devicePixelRatio||1);
+  player.x = Math.max(15, Math.min(W-15, player.x));
+  player.y = Math.max(15, Math.min(H-15, player.y));
+
+  // Update Police AI
+  for(let p of policeCars){ const dx = player.x - p.x; const dy = player.y - p.y; p.angle = Math.atan2(dy, dx); const spd = p.speed * dt; p.x += Math.cos(p.angle) * spd; p.y += Math.sin(p.angle) * spd; // collision
+    if(Math.hypot(player.x-p.x, player.y-p.y) < player.size + p.size){ playPolice(); setTimeout(()=>gameOver(), 10); }
+  }
+
+  // Collectibles (iterate backwards to safely splice)
+  for(let i = collectibles.length - 1; i >= 0; i--){ const c = collectibles[i]; if(Math.hypot(player.x - c.x, player.y - c.y) < player.size + c.size){ if(c.type === 'clout'){ clout += 100; } else { cash += 250; } playCollect(); // heat escalation when total crosses multiple of 500
+      const total = clout + cash; if(total % 500 === 0 && heat < 5){ heat++; spawnPolice(); }
+      collectibles.splice(i,1); spawnCollectible(); updateHUD(); }
+  }
+
+  // Occasional spawn
+  if(Math.random() < 0.01 + 0.005 * heat) spawnCollectible();
+  if(Math.random() < 0.005 * heat) spawnPolice();
+
+  // Render
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // draw grid
+  ctx.save(); ctx.scale(1,1);
+  ctx.strokeStyle = '#281c3d'; ctx.lineWidth = 2;
+  const grid = 80; for(let x=0;x<=W;x+=grid){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for(let y=0;y<=H;y+=grid){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  ctx.restore();
+
+  // Draw collectibles
+  ctx.font = Math.max(12, Math.round(14 * (W/800))) + 'px serif';
+  collectibles.forEach(c => { ctx.fillText(c.type === 'clout' ? '💅' : '💵', c.x - 8, c.y + 6); });
+
+  // Draw police
+  policeCars.forEach(p => {
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.angle); ctx.fillStyle = '#1e90ff'; ctx.fillRect(-12, -8, 24, 16);
+    ctx.fillStyle = (Math.floor(Date.now() / 150) % 2 === 0) ? '#ff0000' : '#00ffff'; ctx.fillRect(-6, -6, 4, 12); ctx.fillRect(2, -6, 4, 12);
+    ctx.restore();
+  });
+
+  // player (pink lambo)
+  ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
+  ctx.fillStyle = '#ff2a85'; ctx.shadowColor = '#ff2a85'; ctx.shadowBlur = 12; ctx.fillRect(-14, -9, 28, 18);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(4, -6, 6, 12);
+  ctx.restore();
+
+  requestAnimationFrame(gameLoop);
+}
+
+// Initial assets & UI
+updateHUD();
+
+// Expose start on Enter key when overlay is visible
+window.addEventListener('keydown', (e) => { if(!isPlaying && (e.key === 'Enter' || e.key === ' ')) startGame(); });
+
+// Ensure audio context is resumed on first interaction
+function resumeAudio(){ if(audioCtx.state === 'suspended') audioCtx.resume(); window.removeEventListener('pointerdown', resumeAudio); window.removeEventListener('touchstart', resumeAudio); }
+window.addEventListener('pointerdown', resumeAudio); window.addEventListener('touchstart', resumeAudio);
+
+</script>
+</body>
+</html>
